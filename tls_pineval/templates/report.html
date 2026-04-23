@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLS-PinEval — {{ ev.app_info.app_name or ev.app_info.package_name }}</title>
+<style>
+{% include 'styles.css' %}
+</style>
+</head>
+<body>
+<div class="container">
+
+    {# ================================================================ HEADER #}
+    <div class="report-header">
+        <h1>TLS-PinEval Security Report</h1>
+        <div class="app-name">
+            {{ ev.app_info.app_name if ev.app_info.app_name else ev.app_info.package_name }}
+        </div>
+        <div class="meta">
+            {{ ev.app_info.package_name }}
+            {% if ev.app_info.version %}&nbsp;&bull;&nbsp;v{{ ev.app_info.version }}{% endif %}
+            {% if ev.app_info.target_sdk %}&nbsp;&bull;&nbsp;Target SDK {{ ev.app_info.target_sdk }}{% endif %}
+            &nbsp;&bull;&nbsp;{{ generated_at }}
+        </div>
+    </div>
+
+    {# ================================================================ SCORE OVERVIEW #}
+    <div class="score-card">
+        <div class="score-number-block">
+            <div class="score-number" style="color: {{ score_color }}">
+                {{ ev.final_score | score_fmt }}
+            </div>
+            <div class="score-denom">out of 100</div>
+        </div>
+
+        <div class="score-details">
+            <h2>Overall Security Score</h2>
+            <div class="progress-bar">
+                <div class="progress-fill"
+                     style="width: {{ ev.final_score }}%; background: {{ score_color }}">
+                </div>
+            </div>
+            <span class="level-badge" style="background: {{ level_color }}">
+                {{ ev.security_level.value }}
+            </span>
+            <div class="score-note">
+                {% if dynamic_included %}
+                    Score includes dynamic bypass testing (C1 &ndash; C4 weighted).
+                {% else %}
+                    Static analysis only &mdash; C3 excluded, weights normalised to 0.70.
+                {% endif %}
+            </div>
+        </div>
+
+        {# Per-criterion mini summary #}
+        <div style="display:flex; flex-direction:column; gap:8px; min-width:200px;">
+        {% for c in ev.criteria %}
+            <div style="display:flex; justify-content:space-between; font-size:13px; gap:16px;">
+                <span style="color:#636e72;">
+                    C{{ c.criterion_id }} {{ c.name }}
+                </span>
+                <span style="font-weight:700;
+                    color:{% if c.score >= 70 %}#27ae60{% elif c.score >= 40 %}#f39c12{% else %}#e74c3c{% endif %};">
+                    {% if c.criterion_id == 3 and not dynamic_included %}
+                        &mdash;
+                    {% else %}
+                        {{ c.score }}/100
+                    {% endif %}
+                </span>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+
+    {# ================================================================ CRITERIA #}
+    <div class="section-title">Criterion Breakdown</div>
+
+    {% for c in ev.criteria %}
+    {% set excluded = (c.criterion_id == 3 and not dynamic_included) %}
+    <div class="criterion-card{% if excluded %} excluded{% endif %}">
+
+        <div class="criterion-header">
+            <div>
+                <div class="criterion-title">
+                    C{{ c.criterion_id }} &mdash; {{ c.name }}
+                    {% if excluded %}
+                        <span style="font-size:12px; color:#95a5a6; font-weight:400;">
+                            (excluded &mdash; dynamic analysis not performed)
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="criterion-meta">
+                <span>Weight: {{ (c.weight * 100) | round(0) | int }}%</span>
+                <span class="conf-badge"
+                      style="background: {{ c.confidence.value | conf_color }}">
+                    {{ c.confidence.value }}
+                </span>
+                <span class="criterion-score-text"
+                      style="color:{% if c.score >= 70 %}#27ae60{% elif c.score >= 40 %}#f39c12{% else %}#e74c3c{% endif %};">
+                    {{ c.score }}/100
+                </span>
+            </div>
+        </div>
+
+        {# score bar #}
+        <div class="criterion-bar">
+            <div class="criterion-bar-fill"
+                 style="width:{{ c.score }}%;
+                        background:{% if c.score >= 70 %}#27ae60{% elif c.score >= 40 %}#f39c12{% else %}#e74c3c{% endif %};">
+            </div>
+        </div>
+
+        {% if c.summary %}
+        <div class="criterion-summary">{{ c.summary }}</div>
+        {% endif %}
+
+        {# Components table #}
+        {% if c.components %}
+        <table class="comp-table">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th style="text-align:right;">Points</th>
+                    <th>Confidence</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for comp in c.components %}
+            <tr>
+                <td>
+                    <div class="check-name">{{ comp.check_name }}</div>
+                    <div style="font-size:11px; color:#95a5a6;">{{ comp.check_id }}</div>
+                </td>
+                <td class="pts-cell
+                    {% if comp.points == 0 %}pts-zero
+                    {% elif comp.points == comp.max_points %}pts-full
+                    {% else %}pts-partial{% endif %}">
+                    {{ comp.points }}&thinsp;/&thinsp;{{ comp.max_points }}
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: {{ comp.confidence.value | conf_color }}">
+                        {{ comp.confidence.value }}
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">{{ comp.rationale }}</div>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if c.warning %}
+        <div class="criterion-warning">
+            &#9888;&ensp;{{ c.warning }}
+        </div>
+        {% endif %}
+
+    </div>
+    {% endfor %}
+
+    {# ================================================================ WARNINGS #}
+    {% if ev.warnings %}
+    <div class="section-title">Warnings</div>
+    <div class="warnings-card">
+        {% for w in ev.warnings %}
+        <div class="warning-item">
+            <span class="warning-icon">&#9888;</span>
+            <span>{{ w }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ================================================================ RECOMMENDATIONS #}
+    {% if ev.recommendations %}
+    <div class="section-title">Recommendations</div>
+    <div class="recs-card">
+        <ol class="rec-list">
+        {% for rec in ev.recommendations %}
+        <li class="rec-item">{{ rec }}</li>
+        {% endfor %}
+        </ol>
+    </div>
+    {% endif %}
+
+    {# ================================================================ REPORT PATHS #}
+    <div class="section-title">Analysis Artifacts</div>
+    <div class="paths-card">
+        <div style="margin-bottom:6px;">
+            <strong>Static report:</strong>
+            <code>{{ ev.static_report_path }}</code>
+        </div>
+        {% if ev.dynamic_report_path %}
+        <div>
+            <strong>Dynamic report:</strong>
+            <code>{{ ev.dynamic_report_path }}</code>
+        </div>
+        {% else %}
+        <div style="color:#b2bec3;">Dynamic report: not generated</div>
+        {% endif %}
+    </div>
+
+    {# ================================================================ FOOTER #}
+    <div class="report-footer">
+        Generated by <strong>TLS-PinEval</strong> &bull; {{ generated_at }}
+    </div>
+
+</div>
+</body>
+</html>
