@@ -1,10 +1,5 @@
 # TLS-PinEval V2 — Final Architecture (Implementation-Ready)
 
-> All critical/important fixes from architecture review applied.
-> Execution environment formally specified.
-
----
-
 ## 1. System Overview & Boundaries
 
 **TLS-PinEval** — quantitative assessment algorithm for Android app security against TLS pinning bypass. 4 criteria (0–100 each), weighted final score, explainable breakdown.
@@ -37,6 +32,21 @@
 | Web UI (Flask/Streamlit) | | ✅ |
 | Cross-framework (Flutter/RN) | | ✅ |
 | Multi-process hooking | | ✅ |
+
+
+## Technology Stack
+
+TLS-PinEval is implemented using **Python 3.11** as the core language, with **Pydantic v2** for strict data modeling and JSON serialization.
+
+Static analysis relies on **APKTool** (resource/Smali extraction) and **Jadx** (Java/Kotlin decompilation).
+Dynamic analysis is performed using **Frida** and **Android Debug Bridge** for device interaction and runtime instrumentation.
+
+Network interception and TLS verification are supported via **mitmproxy**.
+
+The system runs on an Android environment (emulator or physical device) and provides a CLI interface built with **Click**, with HTML reporting implemented using **Jinja2**.
+
+---
+
 
 ---
 
