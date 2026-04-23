@@ -1,0 +1,33 @@
+# TLS-PinEval default configuration
+# Override with: tls-pineval -c my_config.yaml analyze app.apk
+
+scoring:
+  # Confidence scaling factors (conservative penalty defaults per V2 §6)
+  confidence_factors:
+    HIGH:   1.0
+    MEDIUM: 0.7
+    LOW:    0.4
+
+  # Criterion weights (must sum to 1.0 when C3 is included)
+  weights:
+    c1: 0.30   # Implementation Correctness
+    c2: 0.25   # Static Bypass Resistance
+    c3: 0.30   # Dynamic Bypass Resistance
+    c4: 0.15   # Comprehensive Protection
+
+analysis:
+  # Maximum seconds to wait per bypass attempt
+  bypass_timeout: 15
+
+  # Maximum seconds to observe detection behaviour
+  detection_timeout: 10
+
+  # Maximum seconds for Jadx decompilation (5 min default; raise for huge APKs)
+  jadx_timeout: 300
+
+  # Skip Jadx decompilation (faster, Smali-only static analysis)
+  # Recommended for APKs larger than ~30 MB if Jadx is too slow.
+  skip_jadx: false
+
+  # Skip dynamic analysis entirely (static-only mode)
+  skip_dynamic: false
