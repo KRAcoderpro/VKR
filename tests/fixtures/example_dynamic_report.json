@@ -1,0 +1,73 @@
+{
+  "app_info": {
+    "apk_path": "samples\\com.example.banking.apk",
+    "package_name": "com.example.banking",
+    "app_name": "Example Banking",
+    "version": "3.2.1",
+    "min_sdk": 24,
+    "target_sdk": 34
+  },
+  "environment": {
+    "device_id": "emulator-5554",
+    "android_version": "14",
+    "frida_version": "16.2.1",
+    "is_rooted": true
+  },
+  "bypass_attempts": [
+    {
+      "script_name": "generic_unpinner",
+      "target": null,
+      "hook_triggered": true,
+      "verification": "FAILED",
+      "verification_method": "logcat",
+      "confidence": "HIGH",
+      "duration_ms": 3200,
+      "error": null,
+      "generated_script": "Java.perform(function() { /* android-unpinner script */ });",
+      "logs": [
+        "[unpinner] Hooking TrustManagerImpl.checkTrustedRecursive",
+        "[unpinner] Hook fired for checkTrustedRecursive",
+        "[logcat] javax.net.ssl.SSLHandshakeException: Pin verification failed"
+      ]
+    },
+    {
+      "script_name": "trustmanager_hook",
+      "target": {
+        "class_name": "com.example.banking.ssl.PinningTrustManager",
+        "method_name": "checkServerTrusted",
+        "category": "TRUST_MANAGER",
+        "overloads": [
+          "[Ljava.security.cert.X509Certificate;, java.lang.String",
+          "[Ljava.security.cert.X509Certificate;, java.lang.String, java.net.Socket"
+        ],
+        "source_file": "com/example/banking/ssl/PinningTrustManager.smali",
+        "confidence": "HIGH"
+      },
+      "hook_triggered": true,
+      "verification": "SUCCESS",
+      "verification_method": "logcat",
+      "confidence": "HIGH",
+      "duration_ms": 2800,
+      "error": null,
+      "generated_script": "Java.perform(function() {\n  var TM = Java.use('com.example.banking.ssl.PinningTrustManager');\n  TM.checkServerTrusted.overload('[Ljava.security.cert.X509Certificate;', 'java.lang.String').implementation = function(chain, authType) {\n    console.log('[hook] checkServerTrusted bypassed');\n  };\n});",
+      "logs": [
+        "[hook] checkServerTrusted bypassed",
+        "[logcat] D/OkHttp: --> GET https://api.example.com/v1/accounts",
+        "[logcat] D/OkHttp: <-- 200 OK"
+      ]
+    }
+  ],
+  "detection_results": {
+    "frida_detected": false,
+    "root_detected": true,
+    "debugger_detected": false,
+    "app_reaction": "IGNORE"
+  },
+  "mitm_check": {
+    "status": "SKIPPED",
+    "note": "MITM proxy not configured for this test run"
+  },
+  "overall_bypass": true,
+  "targeted_bypass_needed": true,
+  "timestamp": "2026-04-22T01:10:00"
+}

@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLS-PinEval — Example Banking</title>
+<style>
+/* TLS-PinEval Report Stylesheet */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #2c3e50;
+    background: #f0f2f5;
+}
+
+.container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 20px;
+}
+
+/* ---- Header ---- */
+.report-header {
+    background: #1a252f;
+    color: #ecf0f1;
+    padding: 28px 32px;
+    border-radius: 10px;
+    margin-bottom: 24px;
+}
+
+.report-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.report-header .app-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #bdc3c7;
+    margin-bottom: 4px;
+}
+
+.report-header .meta {
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+/* ---- Score overview card ---- */
+.score-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 32px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    flex-wrap: wrap;
+}
+
+.score-number-block {
+    text-align: center;
+    min-width: 120px;
+}
+
+.score-number {
+    font-size: 68px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.score-denom {
+    font-size: 14px;
+    color: #95a5a6;
+    margin-top: 4px;
+}
+
+.score-details {
+    flex: 1;
+    min-width: 220px;
+}
+
+.score-details h2 {
+    font-size: 15px;
+    color: #7f8c8d;
+    font-weight: 500;
+    margin-bottom: 10px;
+}
+
+.progress-bar {
+    height: 18px;
+    background: #ecf0f1;
+    border-radius: 9px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 9px;
+    transition: width 0.3s ease;
+}
+
+.level-badge {
+    display: inline-block;
+    padding: 5px 18px;
+    border-radius: 20px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.score-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #95a5a6;
+}
+
+/* ---- Section headings ---- */
+.section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 28px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #dee2e6;
+}
+
+/* ---- Criterion card ---- */
+.criterion-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+    margin-bottom: 16px;
+}
+
+.criterion-card.excluded {
+    opacity: 0.55;
+}
+
+.criterion-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.criterion-title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.criterion-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: #7f8c8d;
+}
+
+.criterion-score-text {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.criterion-bar {
+    height: 10px;
+    background: #ecf0f1;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.criterion-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+}
+
+.criterion-summary {
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 14px;
+}
+
+/* ---- Component table ---- */
+.comp-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.comp-table th {
+    background: #f8f9fa;
+    padding: 9px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+    white-space: nowrap;
+}
+
+.comp-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+}
+
+.comp-table tr:last-child td {
+    border-bottom: none;
+}
+
+.comp-table tr:hover td {
+    background: #fafafa;
+}
+
+.pts-cell {
+    text-align: right;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.pts-zero {
+    color: #bdc3c7;
+}
+
+.pts-partial {
+    color: #e67e22;
+}
+
+.pts-full {
+    color: #27ae60;
+}
+
+.conf-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: #fff;
+}
+
+.check-name {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.rationale-text {
+    color: #636e72;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+/* ---- Criterion warning ---- */
+.criterion-warning {
+    background: #fff8e1;
+    border-left: 4px solid #f39c12;
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    color: #7d6608;
+    margin-top: 12px;
+}
+
+/* ---- Warnings section ---- */
+.warnings-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+    margin-bottom: 16px;
+}
+
+.warning-item {
+    display: flex;
+    gap: 10px;
+    background: #fff8e1;
+    border-left: 4px solid #f39c12;
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #5d4e37;
+}
+
+.warning-item:last-child {
+    margin-bottom: 0;
+}
+
+.warning-icon {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: #f39c12;
+}
+
+/* ---- Recommendations section ---- */
+.recs-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+    margin-bottom: 16px;
+}
+
+.rec-list {
+    list-style: none;
+    counter-reset: rec-counter;
+}
+
+.rec-item {
+    counter-increment: rec-counter;
+    display: flex;
+    gap: 14px;
+    padding: 11px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    color: #2c3e50;
+    align-items: flex-start;
+}
+
+.rec-item:last-child {
+    border-bottom: none;
+}
+
+.rec-item::before {
+    content: counter(rec-counter);
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    background: #3498db;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+}
+
+/* ---- Paths section ---- */
+.paths-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+.paths-card code {
+    font-family: "Consolas", "Courier New", monospace;
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #495057;
+    font-size: 11px;
+}
+
+/* ---- Footer ---- */
+.report-footer {
+    text-align: center;
+    color: #b2bec3;
+    font-size: 11px;
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #dee2e6;
+}
+
+/* ---- Print ---- */
+@media print {
+    body { background: white; }
+    .container { padding: 0; }
+    .criterion-card,
+    .score-card,
+    .warnings-card,
+    .recs-card { box-shadow: none; border: 1px solid #dee2e6; }
+}</style>
+</head>
+<body>
+<div class="container">
+
+    <div class="report-header">
+        <h1>TLS-PinEval Security Report</h1>
+        <div class="app-name">
+            Example Banking
+        </div>
+        <div class="meta">
+            com.example.banking
+&nbsp;&bull;&nbsp;v3.2.1&nbsp;&bull;&nbsp;Target SDK 34            &nbsp;&bull;&nbsp;2026-04-22 01:15:00
+        </div>
+    </div>
+
+    <div class="score-card">
+        <div class="score-number-block">
+            <div class="score-number" style="color: #e67e22">
+                59.5
+            </div>
+            <div class="score-denom">out of 100</div>
+        </div>
+
+        <div class="score-details">
+            <h2>Overall Security Score</h2>
+            <div class="progress-bar">
+                <div class="progress-fill"
+                     style="width: 59.5%; background: #e67e22">
+                </div>
+            </div>
+            <span class="level-badge" style="background: #e67e22">
+                LOW
+            </span>
+            <div class="score-note">
+                    Score includes dynamic bypass testing (C1 &ndash; C4 weighted).
+            </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px; min-width:200px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; gap:16px;">
+                <span style="color:#636e72;">
+                    C1 Implementation Correctness
+                </span>
+                <span style="font-weight:700;
+                    color:#27ae60;">
+                        80/100
+                </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; gap:16px;">
+                <span style="color:#636e72;">
+                    C2 Static Bypass Resistance
+                </span>
+                <span style="font-weight:700;
+                    color:#f39c12;">
+                        55/100
+                </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; gap:16px;">
+                <span style="color:#636e72;">
+                    C3 Dynamic Bypass Resistance
+                </span>
+                <span style="font-weight:700;
+                    color:#f39c12;">
+                        45/100
+                </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; gap:16px;">
+                <span style="color:#636e72;">
+                    C4 Comprehensive Protection
+                </span>
+                <span style="font-weight:700;
+                    color:#f39c12;">
+                        55/100
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-title">Criterion Breakdown</div>
+
+    <div class="criterion-card">
+
+        <div class="criterion-header">
+            <div>
+                <div class="criterion-title">
+                    C1 &mdash; Implementation Correctness
+                </div>
+            </div>
+            <div class="criterion-meta">
+                <span>Weight: 30%</span>
+                <span class="conf-badge"
+                      style="background: #27ae60">
+                    HIGH
+                </span>
+                <span class="criterion-score-text"
+                      style="color:#27ae60;">
+                    80/100
+                </span>
+            </div>
+        </div>
+
+        <div class="criterion-bar">
+            <div class="criterion-bar-fill"
+                 style="width:80%;
+                        background:#27ae60;">
+            </div>
+        </div>
+
+        <div class="criterion-summary">Strong TLS pinning implementation with minor gaps in WebView handling</div>
+
+        <table class="comp-table">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th style="text-align:right;">Points</th>
+                    <th>Confidence</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>
+                    <div class="check-name">NSC pin-set with SHA-256</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_nsc_sha256</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    20&thinsp;/&thinsp;20
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">SHA-256 key hashing detected in NSC вЂ” recommended pinning method</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Backup pin configured</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_backup_pin</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    15&thinsp;/&thinsp;15
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Backup pin present вЂ” cert rotation will not break the app</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Pin expiry set and reasonable</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_pin_expiry</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    10&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Expiry 2026-06-01 (&lt; 1 year) вЂ” enables key rotation</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">No cleartext traffic</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_no_cleartext</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    10&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">cleartextTrafficPermitted is false</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">No trust-all TrustManager</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_no_trust_all</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    20&thinsp;/&thinsp;20
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">No trust-all implementation detected</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">No allow-all HostnameVerifier</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_no_allow_all_hostname</div>
+                </td>
+                <td class="pts-cell
+pts-partial">
+                    5&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #f39c12">
+                        MEDIUM
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">No HostnameVerifier found вЂ” possible custom implementation (confidence reduced)</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">WebView SSL errors handled</div>
+                    <div style="font-size:11px; color:#95a5a6;">c1_webview_ssl</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;15
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">No WebView SSL handling found вЂ” not applicable or missing</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+
+
+    </div>
+    <div class="criterion-card">
+
+        <div class="criterion-header">
+            <div>
+                <div class="criterion-title">
+                    C2 &mdash; Static Bypass Resistance
+                </div>
+            </div>
+            <div class="criterion-meta">
+                <span>Weight: 25%</span>
+                <span class="conf-badge"
+                      style="background: #f39c12">
+                    MEDIUM
+                </span>
+                <span class="criterion-score-text"
+                      style="color:#f39c12;">
+                    55/100
+                </span>
+            </div>
+        </div>
+
+        <div class="criterion-bar">
+            <div class="criterion-bar-fill"
+                 style="width:55%;
+                        background:#f39c12;">
+            </div>
+        </div>
+
+        <div class="criterion-summary">Moderate static resistance вЂ” basic obfuscation but plaintext secrets reduce score</div>
+
+        <table class="comp-table">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th style="text-align:right;">Points</th>
+                    <th>Confidence</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>
+                    <div class="check-name">Code obfuscation</div>
+                    <div style="font-size:11px; color:#95a5a6;">c2_obfuscation</div>
+                </td>
+                <td class="pts-cell
+pts-partial">
+                    21&thinsp;/&thinsp;30
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #f39c12">
+                        MEDIUM
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Basic obfuscation detected (ProGuard) вЂ” 30 Г— 0.7 = 21 (MEDIUM confidence)</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Pinning logic in native code</div>
+                    <div style="font-size:11px; color:#95a5a6;">c2_native_code</div>
+                </td>
+                <td class="pts-cell
+pts-partial">
+                    10&thinsp;/&thinsp;25
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #e74c3c">
+                        LOW
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Native .so with SSL symbols found but no Java mapping вЂ” 25 Г— 0.4 = 10</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">APK integrity verification</div>
+                    <div style="font-size:11px; color:#95a5a6;">c2_integrity</div>
+                </td>
+                <td class="pts-cell
+pts-partial">
+                    14&thinsp;/&thinsp;20
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #f39c12">
+                        MEDIUM
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">SafetyNet detected вЂ” 20 Г— 0.7 = 14 (heuristic detection)</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">No hardcoded pins in plaintext</div>
+                    <div style="font-size:11px; color:#95a5a6;">c2_no_hardcoded</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;15
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Hardcoded pin hashes found in plaintext strings вЂ” trivially extractable</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Root/environment detection</div>
+                    <div style="font-size:11px; color:#95a5a6;">c2_root_detection</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    10&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Root detection code found in decompiled source</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="criterion-warning">
+            &#9888;&ensp;Over 50% of awarded points come from LOW-confidence components
+        </div>
+
+    </div>
+    <div class="criterion-card">
+
+        <div class="criterion-header">
+            <div>
+                <div class="criterion-title">
+                    C3 &mdash; Dynamic Bypass Resistance
+                </div>
+            </div>
+            <div class="criterion-meta">
+                <span>Weight: 30%</span>
+                <span class="conf-badge"
+                      style="background: #27ae60">
+                    HIGH
+                </span>
+                <span class="criterion-score-text"
+                      style="color:#f39c12;">
+                    45/100
+                </span>
+            </div>
+        </div>
+
+        <div class="criterion-bar">
+            <div class="criterion-bar-fill"
+                 style="width:45%;
+                        background:#f39c12;">
+            </div>
+        </div>
+
+        <div class="criterion-summary">Generic bypass blocked but targeted bypass succeeded вЂ” moderate dynamic resistance</div>
+
+        <table class="comp-table">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th style="text-align:right;">Points</th>
+                    <th>Confidence</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>
+                    <div class="check-name">Generic bypass failed</div>
+                    <div style="font-size:11px; color:#95a5a6;">c3_generic_bypass</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    35&thinsp;/&thinsp;35
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">android-unpinner generic script failed to bypass pinning</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Targeted bypass also failed</div>
+                    <div style="font-size:11px; color:#95a5a6;">c3_targeted_bypass</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;25
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Targeted hook on PinningTrustManager.checkServerTrusted succeeded вЂ” bypass achieved</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">App detects Frida</div>
+                    <div style="font-size:11px; color:#95a5a6;">c3_frida_detection</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;20
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">App did not detect Frida instrumentation</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">App detects root</div>
+                    <div style="font-size:11px; color:#95a5a6;">c3_root_detection</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    10&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">App detected root but continued running (IGNORE reaction)</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">App detects debugger</div>
+                    <div style="font-size:11px; color:#95a5a6;">c3_debugger_detection</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;10
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">No debugger detection observed</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+
+
+    </div>
+    <div class="criterion-card">
+
+        <div class="criterion-header">
+            <div>
+                <div class="criterion-title">
+                    C4 &mdash; Comprehensive Protection
+                </div>
+            </div>
+            <div class="criterion-meta">
+                <span>Weight: 15%</span>
+                <span class="conf-badge"
+                      style="background: #27ae60">
+                    HIGH
+                </span>
+                <span class="criterion-score-text"
+                      style="color:#f39c12;">
+                    55/100
+                </span>
+            </div>
+        </div>
+
+        <div class="criterion-bar">
+            <div class="criterion-bar-fill"
+                 style="width:55%;
+                        background:#f39c12;">
+            </div>
+        </div>
+
+        <div class="criterion-summary">Good defense-in-depth with multiple pinning methods</div>
+
+        <table class="comp-table">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th style="text-align:right;">Points</th>
+                    <th>Confidence</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>
+                    <div class="check-name">Multiple pinning methods</div>
+                    <div style="font-size:11px; color:#95a5a6;">c4_multiple_methods</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    30&thinsp;/&thinsp;30
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Both NSC and programmatic CertificatePinner used вЂ” defense-in-depth</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Custom pinning logic</div>
+                    <div style="font-size:11px; color:#95a5a6;">c4_custom_logic</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;25
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">No non-standard custom pinning logic detected</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Native + Java pinning combined</div>
+                    <div style="font-size:11px; color:#95a5a6;">c4_native_java_combo</div>
+                </td>
+                <td class="pts-cell
+pts-full
+">
+                    25&thinsp;/&thinsp;25
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #e74c3c">
+                        LOW
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">Native SSL library present alongside Java pinning вЂ” 25 Г— 0.4 = 10 (LOW confidence)</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="check-name">Anti-tampering checks</div>
+                    <div style="font-size:11px; color:#95a5a6;">c4_anti_tampering</div>
+                </td>
+                <td class="pts-cell
+pts-zero
+">
+                    0&thinsp;/&thinsp;20
+                </td>
+                <td>
+                    <span class="conf-badge"
+                          style="background: #27ae60">
+                        HIGH
+                    </span>
+                </td>
+                <td>
+                    <div class="rationale-text">SafetyNet found but already counted in C2 вЂ” not double-counted here</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+
+
+    </div>
+
+    <div class="section-title">Warnings</div>
+    <div class="warnings-card">
+        <div class="warning-item">
+            <span class="warning-icon">&#9888;</span>
+            <span>C2 (Static Bypass Resistance): Over 50% of awarded points come from LOW-confidence components</span>
+        </div>
+    </div>
+
+    <div class="section-title">Recommendations</div>
+    <div class="recs-card">
+        <ol class="rec-list">
+        <li class="rec-item">Remove hardcoded pin hashes from plaintext strings вЂ” use encrypted storage</li>
+        <li class="rec-item">Implement Frida detection (e.g. check for frida-server process)</li>
+        <li class="rec-item">Add debugger detection (Debug.isDebuggerConnected())</li>
+        <li class="rec-item">Consider adding WebView SSL error handling if WebView is used</li>
+        </ol>
+    </div>
+
+    <div class="section-title">Analysis Artifacts</div>
+    <div class="paths-card">
+        <div style="margin-bottom:6px;">
+            <strong>Static report:</strong>
+            <code>results\static_report.json</code>
+        </div>
+        <div>
+            <strong>Dynamic report:</strong>
+            <code>results\dynamic_report.json</code>
+        </div>
+    </div>
+
+    <div class="report-footer">
+        Generated by <strong>TLS-PinEval</strong> &bull; 2026-04-22 01:15:00
+    </div>
+
+</div>
+</body>
+</html>

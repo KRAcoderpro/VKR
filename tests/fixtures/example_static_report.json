@@ -1,0 +1,101 @@
+{
+  "app_info": {
+    "apk_path": "samples\\com.example.banking.apk",
+    "package_name": "com.example.banking",
+    "app_name": "Example Banking",
+    "version": "3.2.1",
+    "min_sdk": 24,
+    "target_sdk": 34
+  },
+  "findings": [
+    {
+      "id": "F001",
+      "category": "nsc",
+      "description": "NSC pin-set found with SHA-256 hashes for api.example.com",
+      "location": "res/xml/network_security_config.xml:12",
+      "severity": "INFO",
+      "confidence": "HIGH",
+      "raw_evidence": "<pin digest=\"SHA-256\">base64hash==</pin>"
+    },
+    {
+      "id": "F002",
+      "category": "trustmanager",
+      "description": "Custom TrustManager with checkServerTrusted override — NOT trust-all",
+      "location": "com.example.banking.ssl.PinningTrustManager",
+      "severity": "INFO",
+      "confidence": "HIGH",
+      "raw_evidence": ".method public checkServerTrusted([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V"
+    },
+    {
+      "id": "F003",
+      "category": "protection",
+      "description": "ProGuard obfuscation detected (basic level)",
+      "location": "classes.dex",
+      "severity": "INFO",
+      "confidence": "MEDIUM",
+      "raw_evidence": "Class names: a.a.a, b.c.d — short identifiers suggest obfuscation"
+    }
+  ],
+  "nsc": {
+    "found": true,
+    "pin_sets": [
+      {
+        "domain": "api.example.com",
+        "pins": [
+          "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        ],
+        "expiry": "2026-06-01",
+        "has_backup": true
+      }
+    ],
+    "cleartext_allowed": false
+  },
+  "pinning_implementations": [
+    {
+      "type": "TRUST_MANAGER",
+      "class_name": "com.example.banking.ssl.PinningTrustManager",
+      "is_vulnerable": false,
+      "confidence": "HIGH"
+    },
+    {
+      "type": "CERTIFICATE_PINNER",
+      "class_name": "com.example.banking.net.ApiClient",
+      "is_vulnerable": false,
+      "confidence": "HIGH"
+    }
+  ],
+  "protection": {
+    "obfuscation_level": "BASIC",
+    "native_libs": [
+      "lib/arm64-v8a/libnative-ssl.so"
+    ],
+    "integrity_checks": [
+      "SafetyNet"
+    ],
+    "root_detection": true
+  },
+  "hookable_targets": [
+    {
+      "class_name": "com.example.banking.ssl.PinningTrustManager",
+      "method_name": "checkServerTrusted",
+      "category": "TRUST_MANAGER",
+      "overloads": [
+        "[Ljava.security.cert.X509Certificate;, java.lang.String",
+        "[Ljava.security.cert.X509Certificate;, java.lang.String, java.net.Socket"
+      ],
+      "source_file": "com/example/banking/ssl/PinningTrustManager.smali",
+      "confidence": "HIGH"
+    },
+    {
+      "class_name": "com.example.banking.net.ApiClient",
+      "method_name": "check",
+      "category": "CERTIFICATE_PINNER",
+      "overloads": [
+        "java.lang.String, java.util.List"
+      ],
+      "source_file": "com/example/banking/net/ApiClient.smali",
+      "confidence": "HIGH"
+    }
+  ],
+  "timestamp": "2026-04-22T01:00:00"
+}

@@ -1,0 +1,238 @@
+{
+  "app_info": {
+    "apk_path": "samples\\com.example.banking.apk",
+    "package_name": "com.example.banking",
+    "app_name": "Example Banking",
+    "version": "3.2.1",
+    "min_sdk": 24,
+    "target_sdk": 34
+  },
+  "criteria": [
+    {
+      "criterion_id": 1,
+      "name": "Implementation Correctness",
+      "score": 80,
+      "weight": 0.3,
+      "confidence": "HIGH",
+      "components": [
+        {
+          "check_id": "c1_nsc_sha256",
+          "check_name": "NSC pin-set with SHA-256",
+          "points": 20,
+          "max_points": 20,
+          "confidence": "HIGH",
+          "rationale": "SHA-256 key hashing detected in NSC — recommended pinning method"
+        },
+        {
+          "check_id": "c1_backup_pin",
+          "check_name": "Backup pin configured",
+          "points": 15,
+          "max_points": 15,
+          "confidence": "HIGH",
+          "rationale": "Backup pin present — cert rotation will not break the app"
+        },
+        {
+          "check_id": "c1_pin_expiry",
+          "check_name": "Pin expiry set and reasonable",
+          "points": 10,
+          "max_points": 10,
+          "confidence": "HIGH",
+          "rationale": "Expiry 2026-06-01 (< 1 year) — enables key rotation"
+        },
+        {
+          "check_id": "c1_no_cleartext",
+          "check_name": "No cleartext traffic",
+          "points": 10,
+          "max_points": 10,
+          "confidence": "HIGH",
+          "rationale": "cleartextTrafficPermitted is false"
+        },
+        {
+          "check_id": "c1_no_trust_all",
+          "check_name": "No trust-all TrustManager",
+          "points": 20,
+          "max_points": 20,
+          "confidence": "HIGH",
+          "rationale": "No trust-all implementation detected"
+        },
+        {
+          "check_id": "c1_no_allow_all_hostname",
+          "check_name": "No allow-all HostnameVerifier",
+          "points": 5,
+          "max_points": 10,
+          "confidence": "MEDIUM",
+          "rationale": "No HostnameVerifier found — possible custom implementation (confidence reduced)"
+        },
+        {
+          "check_id": "c1_webview_ssl",
+          "check_name": "WebView SSL errors handled",
+          "points": 0,
+          "max_points": 15,
+          "confidence": "HIGH",
+          "rationale": "No WebView SSL handling found — not applicable or missing"
+        }
+      ],
+      "summary": "Strong TLS pinning implementation with minor gaps in WebView handling",
+      "warning": null
+    },
+    {
+      "criterion_id": 2,
+      "name": "Static Bypass Resistance",
+      "score": 55,
+      "weight": 0.25,
+      "confidence": "MEDIUM",
+      "components": [
+        {
+          "check_id": "c2_obfuscation",
+          "check_name": "Code obfuscation",
+          "points": 21,
+          "max_points": 30,
+          "confidence": "MEDIUM",
+          "rationale": "Basic obfuscation detected (ProGuard) — 30 × 0.7 = 21 (MEDIUM confidence)"
+        },
+        {
+          "check_id": "c2_native_code",
+          "check_name": "Pinning logic in native code",
+          "points": 10,
+          "max_points": 25,
+          "confidence": "LOW",
+          "rationale": "Native .so with SSL symbols found but no Java mapping — 25 × 0.4 = 10"
+        },
+        {
+          "check_id": "c2_integrity",
+          "check_name": "APK integrity verification",
+          "points": 14,
+          "max_points": 20,
+          "confidence": "MEDIUM",
+          "rationale": "SafetyNet detected — 20 × 0.7 = 14 (heuristic detection)"
+        },
+        {
+          "check_id": "c2_no_hardcoded",
+          "check_name": "No hardcoded pins in plaintext",
+          "points": 0,
+          "max_points": 15,
+          "confidence": "HIGH",
+          "rationale": "Hardcoded pin hashes found in plaintext strings — trivially extractable"
+        },
+        {
+          "check_id": "c2_root_detection",
+          "check_name": "Root/environment detection",
+          "points": 10,
+          "max_points": 10,
+          "confidence": "HIGH",
+          "rationale": "Root detection code found in decompiled source"
+        }
+      ],
+      "summary": "Moderate static resistance — basic obfuscation but plaintext secrets reduce score",
+      "warning": "Over 50% of awarded points come from LOW-confidence components"
+    },
+    {
+      "criterion_id": 3,
+      "name": "Dynamic Bypass Resistance",
+      "score": 45,
+      "weight": 0.3,
+      "confidence": "HIGH",
+      "components": [
+        {
+          "check_id": "c3_generic_bypass",
+          "check_name": "Generic bypass failed",
+          "points": 35,
+          "max_points": 35,
+          "confidence": "HIGH",
+          "rationale": "android-unpinner generic script failed to bypass pinning"
+        },
+        {
+          "check_id": "c3_targeted_bypass",
+          "check_name": "Targeted bypass also failed",
+          "points": 0,
+          "max_points": 25,
+          "confidence": "HIGH",
+          "rationale": "Targeted hook on PinningTrustManager.checkServerTrusted succeeded — bypass achieved"
+        },
+        {
+          "check_id": "c3_frida_detection",
+          "check_name": "App detects Frida",
+          "points": 0,
+          "max_points": 20,
+          "confidence": "HIGH",
+          "rationale": "App did not detect Frida instrumentation"
+        },
+        {
+          "check_id": "c3_root_detection",
+          "check_name": "App detects root",
+          "points": 10,
+          "max_points": 10,
+          "confidence": "HIGH",
+          "rationale": "App detected root but continued running (IGNORE reaction)"
+        },
+        {
+          "check_id": "c3_debugger_detection",
+          "check_name": "App detects debugger",
+          "points": 0,
+          "max_points": 10,
+          "confidence": "HIGH",
+          "rationale": "No debugger detection observed"
+        }
+      ],
+      "summary": "Generic bypass blocked but targeted bypass succeeded — moderate dynamic resistance",
+      "warning": null
+    },
+    {
+      "criterion_id": 4,
+      "name": "Comprehensive Protection",
+      "score": 55,
+      "weight": 0.15,
+      "confidence": "HIGH",
+      "components": [
+        {
+          "check_id": "c4_multiple_methods",
+          "check_name": "Multiple pinning methods",
+          "points": 30,
+          "max_points": 30,
+          "confidence": "HIGH",
+          "rationale": "Both NSC and programmatic CertificatePinner used — defense-in-depth"
+        },
+        {
+          "check_id": "c4_custom_logic",
+          "check_name": "Custom pinning logic",
+          "points": 0,
+          "max_points": 25,
+          "confidence": "HIGH",
+          "rationale": "No non-standard custom pinning logic detected"
+        },
+        {
+          "check_id": "c4_native_java_combo",
+          "check_name": "Native + Java pinning combined",
+          "points": 25,
+          "max_points": 25,
+          "confidence": "LOW",
+          "rationale": "Native SSL library present alongside Java pinning — 25 × 0.4 = 10 (LOW confidence)"
+        },
+        {
+          "check_id": "c4_anti_tampering",
+          "check_name": "Anti-tampering checks",
+          "points": 0,
+          "max_points": 20,
+          "confidence": "HIGH",
+          "rationale": "SafetyNet found but already counted in C2 — not double-counted here"
+        }
+      ],
+      "summary": "Good defense-in-depth with multiple pinning methods",
+      "warning": null
+    }
+  ],
+  "final_score": 59.5,
+  "security_level": "LOW",
+  "recommendations": [
+    "Remove hardcoded pin hashes from plaintext strings — use encrypted storage",
+    "Implement Frida detection (e.g. check for frida-server process)",
+    "Add debugger detection (Debug.isDebuggerConnected())",
+    "Consider adding WebView SSL error handling if WebView is used"
+  ],
+  "warnings": [
+    "C2 (Static Bypass Resistance): Over 50% of awarded points come from LOW-confidence components"
+  ],
+  "static_report_path": "results\\static_report.json",
+  "dynamic_report_path": "results\\dynamic_report.json",
+  "timestamp": "2026-04-22T01:15:00"
+}
