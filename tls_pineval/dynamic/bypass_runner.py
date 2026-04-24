@@ -3,6 +3,12 @@
 Implements the CRITICAL-1 fix: hook firing is NOT treated as bypass success.
 Verification is done via logcat monitoring — SSL error patterns → FAILED,
 HTTP 200 patterns → SUCCESS, no network activity → INCONCLUSIVE.
+
+Key design decisions:
+- Logcat is started AFTER spawn() so we know the PID for precise filtering.
+- Logcat is filtered by PID to avoid SSL errors from other system processes.
+- SSL-fail check still takes priority over HTTP-ok to avoid false SUCCESS
+  when a hook error coexists with unrelated successful HTTP traffic.
 """
 
 from __future__ import annotations
@@ -40,24 +46,38 @@ _HTTP_OK_PATTERNS: list[str] = [
 
 
 class _LogcatMonitor:
-    """Captures adb logcat output in a background thread."""
+    """Captures adb logcat output in a background thread, filtered by device and PID."""
 
-    def __init__(self) -> None:
+    def __init__(self, device_id: str, pid: int) -> None:
+        self._device_id = device_id
+        self._pid = pid
         self._proc: Optional[subprocess.Popen[str]] = None
         self._lines: list[str] = []
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
     def start(self) -> None:
-        # Clear stale logcat entries so we only see output from this run
+        # Clear stale logcat entries for this specific device
         try:
-            subprocess.run(["adb", "logcat", "-c"], capture_output=True, timeout=5)
+            subprocess.run(
+                ["adb", "-s", self._device_id, "logcat", "-c"],
+                capture_output=True,
+                timeout=5,
+            )
         except Exception:
             pass
 
+        # Filter by PID so only the target app's logs are captured.
+        # --pid is supported from Android 7 (API 24) onward; on older devices
+        # the flag is silently ignored and all processes are captured.
+        cmd = [
+            "adb", "-s", self._device_id,
+            "logcat", "-v", "tag",
+            f"--pid={self._pid}",
+        ]
         try:
             self._proc = subprocess.Popen(
-                ["adb", "logcat", "-v", "tag"],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
@@ -95,6 +115,11 @@ def _classify_logcat(lines: list[str]) -> tuple[VerificationResult, str]:
     """Classify bypass outcome from logcat lines.
 
     Priority: FAILED (SSL error) > SUCCESS (HTTP 200) > INCONCLUSIVE.
+
+    SSL errors take priority because a failed bypass that also produces some
+    HTTP traffic (e.g. from an unrelated endpoint) must not be reported as
+    SUCCESS.  The caller is responsible for ensuring logcat is PID-filtered
+    to reduce noise from other processes.
     """
     text = "\n".join(lines)
     for pattern in _SSL_FAIL_PATTERNS:
@@ -111,6 +136,7 @@ def run_bypass(
     package_name: str,
     script_js: str,
     script_name: str,
+    device_id: str,
     target: Optional[HookTarget] = None,
     *,
     timeout: int = 15,
@@ -122,6 +148,7 @@ def run_bypass(
         package_name: Android package identifier to spawn.
         script_js: Full Frida JavaScript to inject.
         script_name: Human-readable name stored in the result.
+        device_id: ADB device serial used for logcat and adb commands.
         target: HookTarget this attempt addresses, or None for generic.
         timeout: Seconds to wait for network activity before giving up.
 
@@ -134,12 +161,16 @@ def run_bypass(
     error: Optional[str] = None
     pid: Optional[int] = None
     session: Any = None
-
-    logcat = _LogcatMonitor()
-    logcat.start()
+    logcat: Optional[_LogcatMonitor] = None
 
     try:
+        # Spawn first so we have the PID before starting logcat, enabling
+        # precise PID-based filtering (eliminates SSL noise from other apps).
         pid = device.spawn([package_name])
+
+        logcat = _LogcatMonitor(device_id=device_id, pid=pid)
+        logcat.start()
+
         session = device.attach(pid)
 
         def _on_message(message: dict, data: Any) -> None:
@@ -172,7 +203,7 @@ def run_bypass(
         except Exception:
             pass
 
-    logcat_lines = logcat.stop()
+    logcat_lines = logcat.stop() if logcat is not None else []
     logs.extend(logcat_lines[:200])
 
     duration_ms = int(time.monotonic() * 1000) - start_ms
@@ -184,7 +215,6 @@ def run_bypass(
         confidence = Confidence.LOW
     else:
         verification, verification_method = _classify_logcat(logcat_lines)
-        # INCONCLUSIVE means less certainty; SUCCESS/FAILED from logcat is HIGH
         confidence = (
             Confidence.MEDIUM
             if verification == VerificationResult.INCONCLUSIVE
