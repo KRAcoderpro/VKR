@@ -16,28 +16,40 @@ from tls_pineval.models.dynamic_report import DetectionResults
 
 logger = logging.getLogger(__name__)
 
-# Substrings in Frida exception messages that indicate the app terminated
-# on its own after detecting instrumentation.
-_CRASH_KEYWORDS = ("killed", "process", "crash", "detach", "terminate", "closed")
+# Substrings that appear specifically in Frida exception messages when the
+# target process terminates itself in response to instrumentation.  These are
+# intentionally narrow to avoid false positives from generic Android exceptions
+# that contain words like "process" or "closed".
+_CRASH_KEYWORDS = (
+    "frida",
+    "gadget",
+    "instrumentation",
+    "jdwp",
+    "process exited",
+    "process terminated",
+    "process killed",
+)
 
 
 def test_detection(
     device: Any,
     package_name: str,
     detection_script: str,
+    device_id: str,
     *,
     timeout: int = 10,
 ) -> DetectionResults:
     """Attach Frida to the app and observe self-defense behaviour.
 
     The detection script monitors Root/debugger checks without altering
-    any TLS logic.  If the app crashes while Frida is attached we infer
+    any TLS logic.  If the app terminates while Frida is attached we infer
     Frida detection; individual send() messages report root/debugger checks.
 
     Args:
         device: Frida device object.
         package_name: Android package identifier.
         detection_script: Full Frida JS for the detection_check.js script.
+        device_id: ADB device serial (used for targeted logcat if needed).
         timeout: Seconds to observe the app.
 
     Returns:
@@ -65,7 +77,19 @@ def test_detection(
             event = payload.get("type")
             if event == "root_check":
                 root_detected = True
-                logger.debug("Root check observed: %s", payload.get("cmd"))
+                logger.debug("Root check (exec): %s", payload.get("cmd"))
+            elif event == "file_root_check":
+                # File.exists() / File.canExecute() on known root paths
+                root_detected = True
+                logger.debug(
+                    "Root check (file.%s): %s",
+                    payload.get("method", "?"),
+                    payload.get("path", "?"),
+                )
+            elif event == "package_root_check":
+                # PackageManager.getPackageInfo() for known root packages
+                root_detected = True
+                logger.debug("Root check (package): %s", payload.get("package", "?"))
             elif event == "debugger_check":
                 debugger_detected = True
                 logger.debug("Debugger check observed")
@@ -79,12 +103,17 @@ def test_detection(
 
     except Exception as exc:
         err = str(exc).lower()
+        # Only infer Frida detection when the exception text contains keywords
+        # that are specific to Frida's own error messages, not generic Android
+        # errors (e.g. "process", "closed", "killed" match too broadly).
         if any(kw in err for kw in _CRASH_KEYWORDS):
             frida_detected = True
             app_reaction = AppReaction.CRASH
-            logger.info("App crashed while Frida was attached — Frida detection inferred")
+            logger.info(
+                "App terminated while Frida was attached — Frida detection inferred: %s", exc
+            )
         else:
-            logger.debug("Detection test exception: %s", exc)
+            logger.debug("Detection test exception (not Frida detection): %s", exc)
     finally:
         try:
             if session is not None:
