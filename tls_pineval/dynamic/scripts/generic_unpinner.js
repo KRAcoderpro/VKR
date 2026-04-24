@@ -55,7 +55,11 @@ Java.perform(function () {
             methods: {
                 checkClientTrusted: function () {},
                 checkServerTrusted: function () {},
-                getAcceptedIssuers: function () { return []; }
+                // Must return a proper Java array, not a JS [].
+                // Returning a plain JS array causes TypeError in some Frida versions.
+                getAcceptedIssuers: function () {
+                    return Java.array('java.security.cert.X509Certificate', []);
+                }
             }
         });
 
