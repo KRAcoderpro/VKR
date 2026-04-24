@@ -11,6 +11,13 @@ Execution flow (fixed order per V2 spec):
 
 Raises DynamicAnalysisError on any pre-check failure; never returns a
 partial report.
+
+Device identity:
+    _ensure_environment_ready extracts the ADB device serial from
+    `adb devices` and returns it as part of Environment.  All subsequent
+    ADB commands pass `-s <device_id>` to avoid ambiguity when multiple
+    devices are connected.  Frida uses get_device_manager().get_device_matching_id()
+    for the same reason, supporting both USB and TCP-connected emulators.
 """
 
 from __future__ import annotations
@@ -76,6 +83,7 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
 
     Returns:
         Tuple of (Environment, frida_device) ready for use.
+        Environment.device_id carries the ADB serial for all subsequent calls.
     """
     frida = _get_frida()
 
@@ -99,10 +107,10 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
     device_id = device_lines[0].split("\t")[0].strip()
     logger.info("ADB device found: %s", device_id)
 
-    # Step 2: Read Android version
+    # Step 2: Read Android version — use -s so the right device is queried
     try:
         android_version = run_adb(
-            "shell", "getprop", "ro.build.version.release", timeout=10
+            "-s", device_id, "shell", "getprop", "ro.build.version.release", timeout=10
         ).strip()
     except ToolError as exc:
         raise DynamicAnalysisError(
@@ -115,15 +123,33 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
         )
     logger.info("Android version: %s", android_version)
 
-    # Step 3: Frida connect to device
+    # Step 3: Frida connect to device.
+    # Strategy: try to find the device by ADB serial (works when multiple
+    # devices are connected).  If Frida does not recognise the serial
+    # (common for emulators where Frida uses a different internal ID),
+    # fall back to get_usb_device() which is equivalent to `frida-ps -U`
+    # and reliably connects to the single attached device or emulator.
+    frida_device = None
     try:
-        frida_device = frida.get_usb_device(timeout=5000)
-    except Exception as exc:
-        raise DynamicAnalysisError(
-            "Frida cannot connect to device. "
-            "Is frida-server running? "
-            "Check with: adb shell ps | grep frida-server"
-        ) from exc
+        dm = frida.get_device_manager()
+        for dev in dm.enumerate_devices():
+            if dev.id == device_id:
+                frida_device = dev
+                logger.debug("Frida device matched by serial: %s", device_id)
+                break
+    except Exception:
+        pass
+
+    if frida_device is None:
+        try:
+            frida_device = frida.get_usb_device(timeout=5000)
+            logger.debug("Frida device via get_usb_device (serial did not match)")
+        except Exception as exc:
+            raise DynamicAnalysisError(
+                "Frida cannot connect to device. "
+                "Is frida-server running? "
+                "Check with: adb shell ps | grep frida-server"
+            ) from exc
 
     # Step 4: frida-server responding
     try:
@@ -138,7 +164,7 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
 
     # Step 5: Package installed (informational — install happens next)
     try:
-        pm_output = run_adb("shell", "pm", "list", "packages", timeout=20)
+        pm_output = run_adb("-s", device_id, "shell", "pm", "list", "packages", timeout=20)
         if f"package:{package_name}" not in pm_output:
             logger.info("Package %s not yet installed — will install now", package_name)
     except ToolError:
@@ -147,7 +173,7 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
     # Best-effort root check
     is_rooted = False
     try:
-        id_output = run_adb("shell", "id", timeout=5)
+        id_output = run_adb("-s", device_id, "shell", "id", timeout=5)
         is_rooted = "uid=0" in id_output or "root" in id_output.lower()
     except Exception:
         pass
@@ -168,11 +194,20 @@ def _ensure_environment_ready(package_name: str) -> tuple[Environment, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _install_apk(apk_path: Path) -> None:
-    """Install the APK on the connected device (replace existing if present)."""
-    logger.info("Installing %s", apk_path.name)
+def _install_apk(apk_path: Path, device_id: str) -> None:
+    """Install the APK on the connected device (replace existing if present).
+
+    Uses -s <device_id> to target the correct device.  Also checks stdout
+    for "Failure [...]" strings because adb install can exit 0 on failure.
+    """
+    logger.info("Installing %s on device %s", apk_path.name, device_id)
     try:
-        run_adb("install", "-r", str(apk_path), timeout=120)
+        output = run_adb("-s", device_id, "install", "-r", str(apk_path), timeout=120)
+        # adb install may exit 0 but print "Failure [INSTALL_FAILED_...]"
+        if "Failure" in output or "INSTALL_FAILED" in output:
+            raise DynamicAnalysisError(
+                f"APK installation failed: {output.strip()}"
+            )
     except ToolError as exc:
         raise DynamicAnalysisError(
             f"APK installation failed: {exc}"
@@ -212,26 +247,34 @@ def analyze(
 
     # 1 — Environment pre-checks
     env, frida_device = _ensure_environment_ready(package_name)
+    device_id = env.device_id  # propagate to all subsequent ADB/logcat calls
 
     # 2 — Install APK
-    _install_apk(apk_path)
+    _install_apk(apk_path, device_id)
 
     bypass_attempts: list[BypassAttempt] = []
     overall_bypass = False
     targeted_bypass_needed = False
 
     # 3 — Generic bypass (always first)
-    logger.info("Running generic bypass attempt")
+    logger.info("Step 3 — Generic bypass attempt (timeout %ds) …", bypass_timeout)
     generic_js = generate_generic_script()
     generic_attempt = run_bypass(
         frida_device,
         package_name,
         generic_js,
         "generic_unpinner",
+        device_id,
         target=None,
         timeout=bypass_timeout,
     )
     bypass_attempts.append(generic_attempt)
+    logger.info(
+        "Step 3 done (%dms): hook_triggered=%s verification=%s",
+        generic_attempt.duration_ms,
+        generic_attempt.hook_triggered,
+        generic_attempt.verification.value,
+    )
 
     if generic_attempt.verification == VerificationResult.SUCCESS:
         overall_bypass = True
@@ -242,22 +285,32 @@ def analyze(
         if targets:
             targeted_bypass_needed = True
             logger.info(
-                "Generic bypass did not succeed — running %d targeted attempt(s)",
-                len(targets),
+                "Step 4 — %d targeted bypass attempt(s) (timeout %ds each) …",
+                len(targets), bypass_timeout,
             )
-            for target in targets:
+            for idx, target in enumerate(targets, 1):
                 if overall_bypass:
                     break
+                logger.info(
+                    "  Target %d/%d: %s.%s",
+                    idx, len(targets), target.class_name, target.method_name,
+                )
                 targeted_js = generate_targeted_script(target)
                 attempt = run_bypass(
                     frida_device,
                     package_name,
                     targeted_js,
                     f"targeted_{target.category.value.lower()}",
+                    device_id,
                     target=target,
                     timeout=bypass_timeout,
                 )
                 bypass_attempts.append(attempt)
+                logger.info(
+                    "  Target %d/%d done (%dms): hook_triggered=%s verification=%s",
+                    idx, len(targets), attempt.duration_ms,
+                    attempt.hook_triggered, attempt.verification.value,
+                )
                 if attempt.verification == VerificationResult.SUCCESS:
                     overall_bypass = True
                     logger.info(
@@ -266,12 +319,13 @@ def analyze(
                     )
 
     # 5 — Detection tests
-    logger.info("Running detection tests")
+    logger.info("Step 5 — Detection tests (timeout %ds) …", detection_timeout)
     detection_js = generate_detection_script()
     detection_results: DetectionResults = test_detection(
         frida_device,
         package_name,
         detection_js,
+        device_id,
         timeout=detection_timeout,
     )
 
