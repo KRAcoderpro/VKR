@@ -70,7 +70,11 @@ def generate_recommendations(
             "Set a pin expiry date in the pin-set — enables planned certificate rotation "
             "without emergency app update"
         )
-    if _pts(criteria, "c1_no_cleartext") == 0:
+    # Check the actual NSC field rather than the score component, which is
+    # absent when there is no pinning at all (early-exit path in _score_c1).
+    # Without this guard, apps with no pinning would get a spurious cleartext
+    # recommendation even when cleartextTrafficPermitted is false.
+    if static_report.nsc.cleartext_allowed:
         recs.append(
             "Disable cleartext (HTTP) traffic — set cleartextTrafficPermitted=false "
             "in network_security_config.xml base-config"
