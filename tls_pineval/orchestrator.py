@@ -10,6 +10,7 @@ completed EvaluationResult plus the path to the HTML report.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -44,9 +45,12 @@ def pipeline_static(
     jadx_timeout: int  = cfg_get(cfg, "analysis", "jadx_timeout", default=300)
 
     logger.info("Phase 1 — Static analysis: %s", apk_path.name)
-    return run_static_analysis(
+    t0 = time.perf_counter()
+    result = run_static_analysis(
         apk_path, output_dir, skip_jadx=skip_jadx, jadx_timeout=jadx_timeout
     )
+    logger.info("Phase 1 done in %.1fs", time.perf_counter() - t0)
+    return result
 
 
 def pipeline_dynamic(
@@ -68,13 +72,16 @@ def pipeline_dynamic(
     detection_timeout: int = cfg_get(cfg, "analysis", "detection_timeout", default=10)
 
     logger.info("Phase 2 — Dynamic analysis: %s", static_report.app_info.package_name)
-    return run_dynamic(
+    t0 = time.perf_counter()
+    result = run_dynamic(
         apk_path,
         static_report,
         output_dir=output_dir,
         bypass_timeout=bypass_timeout,
         detection_timeout=detection_timeout,
     )
+    logger.info("Phase 2 done in %.1fs", time.perf_counter() - t0)
+    return result
 
 
 def pipeline_score(
@@ -92,16 +99,23 @@ def pipeline_score(
         Tuple of (EvaluationResult, path-to-HTML).
     """
     logger.info("Phase 3 — Scoring")
+    t0 = time.perf_counter()
     evaluation = evaluate(
         static_report,
         dynamic_report,
         static_report_path=static_report_path,
         dynamic_report_path=dynamic_report_path,
     )
+    logger.info("Phase 3 done in %.1fs — final score: %.1f (%s)",
+                time.perf_counter() - t0,
+                evaluation.final_score,
+                evaluation.security_level.value)
 
     logger.info("Phase 4 — Report generation")
+    t0 = time.perf_counter()
     report_path = output_dir / "report.html"
     generate_report(evaluation, output_path=report_path)
+    logger.info("Phase 4 done in %.1fs", time.perf_counter() - t0)
 
     return evaluation, report_path
 
@@ -125,6 +139,7 @@ def pipeline_full(
     skip_dynamic: bool = cfg_get(cfg, "analysis", "skip_dynamic", default=False)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    pipeline_start = time.perf_counter()
 
     # Phase 1 — Static
     static_report = pipeline_static(apk_path, output_dir=output_dir, cfg=cfg)
@@ -154,7 +169,7 @@ def pipeline_full(
             )
 
     # Phases 3 & 4 — Score + Report
-    return pipeline_score(
+    result = pipeline_score(
         static_report,
         dynamic_report,
         output_dir=output_dir,
@@ -162,6 +177,8 @@ def pipeline_full(
         dynamic_report_path=dynamic_report_path,
         cfg=cfg,
     )
+    logger.info("Pipeline complete in %.1fs total", time.perf_counter() - pipeline_start)
+    return result
 
 
 def pipeline_score_from_paths(

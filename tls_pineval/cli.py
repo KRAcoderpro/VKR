@@ -145,7 +145,8 @@ def cli(ctx: click.Context, output_dir: str, verbose: bool, config: Optional[str
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
-        format="%(levelname)-8s %(name)s  %(message)s",
+        format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+        datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
     ctx.ensure_object(dict)
