@@ -119,11 +119,17 @@ def _score_c1(static: StaticReport) -> CriterionScore:
 
     components: list[ScoreComponent] = []
 
-    # c1_nsc_sha256 — NSC pin-set with SHA-256 (20 pts)
+    # c1_nsc_sha256 — NSC pin-set with SHA-256, or code-based SHA-256 pinning (20 pts)
     sha256_pins = [
         p for ps in nsc.pin_sets for p in ps.pins
         if p.lower().startswith("sha256/") or p.lower().startswith("sha-256/")
     ]
+    has_hardcoded_sha256 = any(f.category == "secrets" for f in static.findings)
+    has_non_vulnerable_code_pinning = any(
+        not i.is_vulnerable
+        for i in impls
+        if i.type in (HookCategory.TRUST_MANAGER, HookCategory.CERTIFICATE_PINNER)
+    )
     if sha256_pins:
         components.append(ScoreComponent(
             check_id="c1_nsc_sha256",
@@ -132,6 +138,18 @@ def _score_c1(static: StaticReport) -> CriterionScore:
             max_points=20,
             confidence=Confidence.HIGH,
             rationale=f"SHA-256 key hashing used in {len(nsc.pin_sets)} pin-set(s) — recommended pinning method",
+        ))
+    elif has_non_vulnerable_code_pinning and has_hardcoded_sha256:
+        components.append(ScoreComponent(
+            check_id="c1_nsc_sha256",
+            check_name="Code-based SHA-256 pinning (no NSC)",
+            points=12,
+            max_points=20,
+            confidence=Confidence.MEDIUM,
+            rationale=(
+                "SHA-256 hashes hardcoded in non-vulnerable TrustManager/CertificatePinner — "
+                "valid code-based pinning (12/20: NSC preferred for auditability)"
+            ),
         ))
     else:
         components.append(ScoreComponent(
@@ -355,18 +373,36 @@ def _score_c2(static: StaticReport) -> CriterionScore:
     ))
 
     # c2_no_hardcoded — No hardcoded pins in plaintext (15 pts, HIGH)
+    # Hardcoded SHA-256 hashes alongside a valid code-based pinning implementation
+    # are intentional (the hashes ARE the pinning mechanism).  Only penalise when
+    # hashes appear without a corresponding secure implementation.
     has_hardcoded = any(f.category == "secrets" for f in findings)
+    has_non_vulnerable_impl = any(
+        not i.is_vulnerable
+        for i in static.pinning_implementations
+        if i.type in (HookCategory.TRUST_MANAGER, HookCategory.CERTIFICATE_PINNER)
+    )
+    if not has_hardcoded:
+        hc_pts, hc_rationale = 15, "No hardcoded pin hashes in plaintext"
+    elif has_non_vulnerable_impl:
+        hc_pts = 15
+        hc_rationale = (
+            "Hardcoded SHA-256 hashes found alongside secure code-based pinning — "
+            "consistent with intentional pinning strategy, not accidental exposure"
+        )
+    else:
+        hc_pts = 0
+        hc_rationale = (
+            "Hardcoded pin hashes found without a secure pinning implementation — "
+            "trivially extractable by attacker"
+        )
     components.append(ScoreComponent(
         check_id="c2_no_hardcoded",
         check_name="No hardcoded pins in plaintext",
-        points=0 if has_hardcoded else 15,
+        points=hc_pts,
         max_points=15,
         confidence=Confidence.HIGH,
-        rationale=(
-            "Hardcoded pin hashes found in plaintext — trivially extractable by attacker"
-            if has_hardcoded else
-            "No hardcoded pin hashes in plaintext"
-        ),
+        rationale=hc_rationale,
     ))
 
     # c2_root_detection — Root/env detection (10 pts, MEDIUM)
@@ -554,19 +590,27 @@ def _score_c4(static: StaticReport) -> CriterionScore:
     prot = static.protection
     components: list[ScoreComponent] = []
 
-    # c4_multiple_methods — NSC + programmatic pinning (30 pts)
+    # c4_multiple_methods — Multiple pinning methods (30 pts)
+    # Full credit: NSC pin-sets + programmatic (defense-in-depth).
+    # Partial credit: either method alone (better than nothing).
     has_nsc_pins = bool(nsc.pin_sets)
     has_programmatic = bool(impls)
     if has_nsc_pins and has_programmatic:
         multi_pts = 30
         multi_rationale = "Both NSC pin-sets and programmatic pinning detected — defense-in-depth"
+    elif has_programmatic:
+        multi_pts = 15
+        multi_rationale = (
+            "Programmatic pinning only — 15/30: adding NSC pin-sets would provide defense-in-depth"
+        )
+    elif has_nsc_pins:
+        multi_pts = 10
+        multi_rationale = (
+            "NSC pin-sets only — 10/30: adding code-based pinning would provide defense-in-depth"
+        )
     else:
         multi_pts = 0
-        multi_rationale = (
-            "Only one pinning method detected — NSC-only or programmatic-only"
-            if (has_nsc_pins or has_programmatic) else
-            "No pinning methods detected"
-        )
+        multi_rationale = "No pinning methods detected"
     components.append(ScoreComponent(
         check_id="c4_multiple_methods",
         check_name="Multiple pinning methods (NSC + programmatic)",
