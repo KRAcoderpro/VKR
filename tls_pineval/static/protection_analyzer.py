@@ -46,9 +46,13 @@ def _detect_obfuscation_level(smali_dir: Path) -> tuple[ObfuscationLevel, Confid
     """Estimate obfuscation level from class naming patterns.
 
     Heuristic:
-        - If many classes have single-letter names (a.a, b.c) → BASIC (ProGuard)
-        - If class names are heavily randomized → STRONG (DexGuard etc.)
-        - Otherwise → NONE
+        - ratio > 0.4  of short (≤2 char) class file names → STRONG
+        - ratio > 0.15 → BASIC (ProGuard/R8)
+        - otherwise   → NONE
+
+    The previous implementation also checked for proguard-rules.pro inside
+    smali_dir, but that file is part of the project source tree and is never
+    present in APKTool's decompiled output.  That check has been removed.
     """
     if not smali_dir.exists():
         return ObfuscationLevel.NONE, Confidence.LOW
@@ -57,7 +61,6 @@ def _detect_obfuscation_level(smali_dir: Path) -> tuple[ObfuscationLevel, Confid
     for root, _dirs, files in os.walk(smali_dir):
         for fname in files:
             if fname.endswith(".smali"):
-                # Use just the filename without extension
                 class_names.append(fname[:-6])
 
     if not class_names:
@@ -67,15 +70,9 @@ def _detect_obfuscation_level(smali_dir: Path) -> tuple[ObfuscationLevel, Confid
     short_names = sum(1 for n in class_names if len(n) <= 2)
     ratio = short_names / total if total > 0 else 0
 
-    # Also check for proguard mapping file indicator
-    has_proguard_marker = any(
-        (smali_dir / name).exists()
-        for name in ["proguard-rules.pro", "proguard.cfg"]
-    )
-
     if ratio > 0.4:
         return ObfuscationLevel.STRONG, Confidence.MEDIUM
-    elif ratio > 0.15 or has_proguard_marker:
+    elif ratio > 0.15:
         return ObfuscationLevel.BASIC, Confidence.MEDIUM
     else:
         return ObfuscationLevel.NONE, Confidence.HIGH
@@ -86,8 +83,13 @@ def _search_pattern_in_files(
     pattern: re.Pattern[str],
     extensions: tuple[str, ...] = (".smali", ".java", ".xml"),
     max_file_size: int = 2 * 1024 * 1024,
+    max_matches: int = 1,
 ) -> list[tuple[Path, str]]:
-    """Search for a pattern across files, returning (path, matched_text)."""
+    """Search for a pattern across files, returning (path, matched_text).
+
+    Stops after *max_matches* to avoid reading the entire corpus when only
+    a presence check is needed (all callers use matches[0] at most).
+    """
     matches: list[tuple[Path, str]] = []
     if not directory.exists():
         return matches
@@ -103,6 +105,8 @@ def _search_pattern_in_files(
                 content = fpath.read_text(encoding="utf-8", errors="replace")
                 for m in pattern.finditer(content):
                     matches.append((fpath, m.group()))
+                    if max_matches and len(matches) >= max_matches:
+                        return matches
             except OSError:
                 continue
     return matches
@@ -159,13 +163,20 @@ def analyze_protection(
             )
         )
 
-    # --- Search across all available source dirs ---
-    search_dirs = [d for d in [smali_dir, jadx_dir, apktool_dir] if d and d.exists()]
+    # Use one best source directory for pattern searches.
+    # These patterns target external API names (SafetyNet, Magisk, etc.) which
+    # are not obfuscated — Smali and Java are equivalent here.  Prefer smali_dir
+    # over jadx_dir: Smali is always fully available (APKTool never times out),
+    # while Jadx can be 5–10× larger and may be partial if it timed out.
+    search_dir: Path | None = next(
+        (d for d in [smali_dir, jadx_dir] if d and d.exists()), None
+    )
 
     # --- SafetyNet ---
     safetynet_found = False
-    for d in search_dirs:
-        matches = _search_pattern_in_files(d, SAFETYNET_PATTERN.pattern)
+    if search_dir:
+        logger.debug("Searching for SafetyNet in %s", search_dir)
+        matches = _search_pattern_in_files(search_dir, SAFETYNET_PATTERN.pattern)
         if matches:
             safetynet_found = True
             findings.append(
@@ -179,12 +190,12 @@ def analyze_protection(
                     raw_evidence=matches[0][1][:200],
                 )
             )
-            break
 
     # --- Play Integrity ---
     play_integrity_found = False
-    for d in search_dirs:
-        matches = _search_pattern_in_files(d, PLAY_INTEGRITY_PATTERN.pattern)
+    if search_dir:
+        logger.debug("Searching for Play Integrity in %s", search_dir)
+        matches = _search_pattern_in_files(search_dir, PLAY_INTEGRITY_PATTERN.pattern)
         if matches:
             play_integrity_found = True
             findings.append(
@@ -198,7 +209,6 @@ def analyze_protection(
                     raw_evidence=matches[0][1][:200],
                 )
             )
-            break
 
     integrity_checks: list[str] = []
     if safetynet_found:
@@ -208,8 +218,9 @@ def analyze_protection(
 
     # --- Root detection ---
     root_detection = False
-    for d in search_dirs:
-        matches = _search_pattern_in_files(d, ROOT_DETECTION_PATTERNS.pattern)
+    if search_dir:
+        logger.debug("Searching for root detection in %s", search_dir)
+        matches = _search_pattern_in_files(search_dir, ROOT_DETECTION_PATTERNS.pattern)
         if matches:
             root_detection = True
             findings.append(
@@ -223,7 +234,6 @@ def analyze_protection(
                     raw_evidence=matches[0][1][:200],
                 )
             )
-            break
 
     profile = ProtectionProfile(
         obfuscation_level=obf_level,
