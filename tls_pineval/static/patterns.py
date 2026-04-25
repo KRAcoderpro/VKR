@@ -69,19 +69,29 @@ SMALI_CHECK_SERVER_TRUSTED = SearchPattern(
     description="checkServerTrusted method declaration in Smali",
 )
 
-# TrustManager — trust-all indicator (empty method or immediate return)
+# TrustManager — trust-all indicator (only return-void, no real instructions).
+# The negative lookahead stops matching if any actual bytecode instruction
+# (invoke-*, iget, iput, sget, sput, aget, aput, throw, move, check-cast,
+# new-instance, filled-new-array) is encountered before return-void.
+# This allows any Smali directives (.registers, .locals, .line, .prologue,
+# multi-line .annotation/.end annotation, .param/.end param) in the body,
+# which was not handled by the previous single-line annotation pattern.
 SMALI_TRUST_ALL = SearchPattern(
     name="smali_trust_all",
     pattern=re.compile(
         r"\.method\s+public\s+(?:final\s+)?checkServerTrusted\([^)]*\)V"
-        r"\s*\.registers\s+\d+\s*"
-        r"(?:\.(?:annotation|param)[^\n]*\n)*"
-        r"\s*return-void",
+        r"(?:(?!"
+        r"invoke-|iget\b|iput\b|sget\b|sput\b|aget\b|aput\b"
+        r"|new-instance\b|filled-new-array\b|check-cast\b"
+        r"|throw\b|move\b|add-|sub-|mul-|div-|rem-|and-|or-|xor-"
+        r"|\.method\b"
+        r").)*?"
+        r"\breturn-void\b",
         re.MULTILINE | re.DOTALL,
     ),
     category="trustmanager",
     source=PatternSource.SMALI,
-    description="Trust-all TrustManager (checkServerTrusted returns immediately)",
+    description="Trust-all TrustManager (checkServerTrusted returns without logic)",
 )
 
 # CertificatePinner (OkHttp)
@@ -131,21 +141,34 @@ SMALI_HOSTNAME_VERIFY_METHOD = SearchPattern(
     description="HostnameVerifier.verify() method declaration",
 )
 
-# HostnameVerifier — allow-all (returns true without checking)
+# HostnameVerifier — allow-all (returns true without any validation).
+# Uses the same negative-lookahead strategy as SMALI_TRUST_ALL to survive
+# compiler-generated register differences and Smali directive interleaving.
+# const/4 vX, 0x1 may use any register (v0, v1, p0 etc.) and may have
+# .line directives between it and the return instruction.
 SMALI_ALLOW_ALL_HOSTNAME = SearchPattern(
     name="smali_allow_all_hostname",
     pattern=re.compile(
         r"\.method\s+public\s+(?:final\s+)?verify\("
         r"Ljava/lang/String;Ljavax/net/ssl/SSLSession;\)Z"
-        r"\s*\.registers\s+\d+\s*"
-        r"(?:\.(?:annotation|param)[^\n]*\n)*"
-        r"\s*const/4\s+v\d+,\s*0x1\s*\n"
-        r"\s*return\s+v\d+",
+        r"(?:(?!"
+        r"invoke-|iget\b|iput\b|sget\b|sput\b|aget\b|aput\b"
+        r"|new-instance\b|check-cast\b|throw\b"
+        r"|if-\w+|goto\b|packed-switch\b|sparse-switch\b"
+        r"|\.method\b"
+        r").)*?"
+        r"\bconst/4\s+\w+,\s*0x1\b"
+        r"(?:(?!"
+        r"invoke-|iget\b|iput\b|sget\b|sput\b"
+        r"|new-instance\b|check-cast\b|throw\b"
+        r"|if-\w+|goto\b|\.method\b"
+        r").)*?"
+        r"\breturn\b",
         re.MULTILINE | re.DOTALL,
     ),
     category="hostname",
     source=PatternSource.SMALI,
-    description="Allow-all HostnameVerifier (verify returns true immediately)",
+    description="Allow-all HostnameVerifier (verify returns true without validation)",
 )
 
 # WebView SSL error handler
@@ -305,29 +328,38 @@ PLAY_INTEGRITY_PATTERN = SearchPattern(
 ROOT_DETECTION_PATTERNS = SearchPattern(
     name="root_detection",
     pattern=re.compile(
-        r"(?:isDeviceRooted|checkRoot|RootBeer|RootDetect|"
-        r"/su\b|/system/xbin/su|com\.noshufou\.android\.su|"
-        r"eu\.chainfire\.supersu|com\.topjohnwu\.magisk|"
-        r"isRooted|detectRoot|checkForRoot)",
-        re.MULTILINE | re.IGNORECASE,
+        # Named root-check methods specific to device rooting (not filesystem path helpers)
+        r"(?:isDeviceRooted|checkRootMethod|RootBeer|RootDetect|"
+        # Superuser binary paths in string literals
+        r'"/system/xbin/su"|"/system/bin/su"|"/data/local/tmp/su"|"/sbin/su"|'
+        # Known root/superuser package identifiers
+        r"com\.noshufou\.android\.su|eu\.chainfire\.supersu|com\.topjohnwu\.magisk|"
+        # Root management app packages
+        r"com\.koushikdutta\.superuser|com\.zachspong\.temprootremovejb|"
+        # RootBeer library class
+        r"com\.scottyab\.rootbeer"
+        r")",
+        re.MULTILINE,
     ),
     category="protection",
     source=PatternSource.BOTH,
-    description="Root/superuser detection patterns",
+    description="Root/superuser detection patterns (device root, not filesystem path helpers)",
 )
 
 # Hardcoded secrets related to pinning
 HARDCODED_PIN_PATTERNS = SearchPattern(
     name="hardcoded_pins",
     pattern=re.compile(
-        r"(?:sha256/[A-Za-z0-9+/=]{20,}|"
-        r"-----BEGIN CERTIFICATE-----|"
-        r"\"[A-Fa-f0-9]{64}\")",  # SHA-256 hex
-        re.MULTILINE,
+        # OkHttp / NSC / TrustKit pin format (unambiguous)
+        r"sha256/[A-Za-z0-9+/=]{20,}"
+        r"|sha-256/[A-Za-z0-9+/=]{20,}"
+        # Embedded PEM certificate block
+        r"|-----BEGIN CERTIFICATE-----",
+        re.MULTILINE | re.IGNORECASE,
     ),
     category="secrets",
     source=PatternSource.BOTH,
-    description="Hardcoded certificate pins or embedded certificates",
+    description="Hardcoded certificate pins (sha256/ format) or embedded PEM certificates",
 )
 
 
