@@ -186,6 +186,13 @@ def run_jadx(apk_path: Path, output_dir: Path, *, timeout: int = 300) -> Path:
 
     Raises:
         ToolError: If jadx is not installed or produced no output at all.
+
+    Note on Windows timeout:
+        subprocess.run(capture_output=True, timeout=...) blocks indefinitely
+        after proc.kill() on Windows when the child is a Java process that is
+        slow to exit.  We use Popen + communicate(timeout) + explicit kill to
+        avoid this hang.  stdout/stderr are redirected to a log file so the
+        pipe can never fill and block.
     """
     tool = _find_tool("jadx")
     out = output_dir / "jadx_out"
@@ -205,40 +212,54 @@ def run_jadx(apk_path: Path, output_dir: Path, *, timeout: int = 300) -> Path:
         # are never obfuscated — only application class names are.
     ]
     logger.debug("Running: %s", " ".join(cmd))
+
+    log_file = output_dir / "jadx.log"
+    timed_out = False
+    returncode: int = 0
+
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            stdin=subprocess.DEVNULL,
-        )
+        with open(log_file, "w", encoding="utf-8", errors="replace") as log_fh:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_fh,
+                stderr=log_fh,
+                stdin=subprocess.DEVNULL,
+            )
+        try:
+            returncode = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            # Give the JVM up to 5 s to exit after SIGKILL; don't block forever.
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
     except FileNotFoundError as exc:
         raise ToolError(f"Command not found: {cmd[0]}") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ToolError(
-            f"Jadx timed out after {timeout}s. "
-            "Use --skip-jadx for very large APKs, or raise jadx_timeout in config."
-        ) from exc
 
-    if result.returncode != 0:
+    if timed_out:
+        partial = out.exists()
+        raise ToolError(
+            f"Jadx timed out after {timeout}s"
+            f"{' (partial output available)' if partial else ''}. "
+            "Use --skip-jadx for very large APKs, or set jadx_timeout in config."
+        )
+
+    if returncode != 0:
         if not out.exists():
-            # Complete failure — jadx produced nothing at all.
-            detail = (result.stderr or result.stdout or "(no output)").strip()[:1000]
+            detail = ""
+            try:
+                detail = log_file.read_text(encoding="utf-8", errors="replace")[-1000:]
+            except OSError:
+                pass
             raise ToolError(
-                f"Jadx failed completely (exit {result.returncode}): {detail}"
+                f"Jadx failed completely (exit {returncode}): {detail or '(no output)'}"
             )
-        # Partial failure — jadx hit errors on individual classes but still
-        # produced output for the rest.  This is normal for obfuscated or
-        # complex APKs; continue with whatever was decompiled.
-        error_lines = [
-            l for l in (result.stdout + result.stderr).splitlines()
-            if "ERROR" in l
-        ]
+        # Partial failure is normal for obfuscated APKs.
         logger.warning(
-            "Jadx finished with %d error(s) on individual classes "
-            "(exit %d) — continuing with partial decompilation output",
-            len(error_lines), result.returncode,
+            "Jadx finished with errors (exit %d) — continuing with partial output",
+            returncode,
         )
 
     if not out.exists():
