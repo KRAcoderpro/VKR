@@ -52,6 +52,20 @@ logger = logging.getLogger(__name__)
 # Maximum file size to scan (skip huge generated files)
 _MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
 
+# Package prefixes that are SSL providers/implementations, not application
+# pinning logic.  Matching these generates false positives: their TrustManager
+# or HostnameVerifier implementations are part of the TLS stack, not pinning.
+_SSL_PROVIDER_PREFIXES = (
+    "org.conscrypt.",
+    "com.android.org.conscrypt.",
+    "sun.security.ssl.",
+    "com.google.android.gms.org.conscrypt.",
+    "org.bouncycastle.",
+    "org.spongycastle.",
+    "javax.net.ssl.",
+    "java.net.",
+)
+
 
 def _smali_path_to_class(path: Path, base: Path) -> str:
     """Convert a Smali file path to a Java class name.
@@ -162,6 +176,9 @@ def _smali_params_to_java(raw: str) -> str:
     return ", ".join(parts)
 
 
+_LOAD_LOG_INTERVAL = 2000  # log a progress line every N files read from disk
+
+
 def _scan_files(directory: Path, extension: str) -> list[tuple[Path, str]]:
     """Recursively read all files with given extension, returning (path, content)."""
     results: list[tuple[Path, str]] = []
@@ -179,6 +196,9 @@ def _scan_files(directory: Path, extension: str) -> list[tuple[Path, str]]:
             try:
                 content = fpath.read_text(encoding="utf-8", errors="replace")
                 results.append((fpath, content))
+                n = len(results)
+                if n % _LOAD_LOG_INTERVAL == 0:
+                    logger.info("  Loading %s files: %d read …", extension, n)
             except OSError as exc:
                 logger.warning("Cannot read %s: %s", fpath, exc)
     return results
@@ -193,6 +213,11 @@ class CodeAnalysisResult:
         self.hook_targets: list[HookTarget] = []
         self._finding_counter = 0
         self._seen_classes: set[str] = set()
+        # Deduplication key for PinningImpl: type:class_name.
+        # Both Smali and Java analysis may detect the same class; without
+        # this guard the same implementation would appear twice in the report
+        # and could be double-counted by dependent scoring logic.
+        self._seen_impls: set[str] = set()
 
     def _next_id(self, prefix: str) -> str:
         self._finding_counter += 1
@@ -204,13 +229,21 @@ class CodeAnalysisResult:
         self.findings.append(Finding(**kwargs))  # type: ignore[arg-type]
 
     def add_impl(self, impl: PinningImpl) -> None:
-        self.pinning_impls.append(impl)
+        key = f"{impl.type.value}:{impl.class_name}"
+        if key not in self._seen_impls:
+            self._seen_impls.add(key)
+            self.pinning_impls.append(impl)
 
     def add_hook_target(self, target: HookTarget) -> None:
         key = f"{target.class_name}.{target.method_name}"
         if key not in self._seen_classes:
             self._seen_classes.add(key)
             self.hook_targets.append(target)
+
+
+def _is_ssl_provider(class_name: str) -> bool:
+    """Return True if this class belongs to an SSL provider, not application code."""
+    return any(class_name.startswith(prefix) for prefix in _SSL_PROVIDER_PREFIXES)
 
 
 def _analyze_smali_file(
@@ -221,6 +254,8 @@ def _analyze_smali_file(
 ) -> None:
     """Analyze a single Smali file for TLS pinning patterns."""
     class_name = _smali_path_to_class(path, base_dir)
+    if _is_ssl_provider(class_name):
+        return
     rel_path = str(path.relative_to(base_dir)) if base_dir in path.parents else path.name
 
     # --- TrustManager ---
@@ -408,6 +443,8 @@ def _analyze_java_file(
     due to obfuscation or complex control flow.
     """
     class_name = _java_path_to_class(path, base_dir)
+    if _is_ssl_provider(class_name):
+        return
     rel_path = str(path.relative_to(base_dir)) if base_dir in path.parents else path.name
 
     # --- TrustManager ---
@@ -570,19 +607,27 @@ def analyze_code(
 
     # Scan Smali files
     if smali_dir and smali_dir.exists():
+        logger.info("  Loading Smali files from disk …")
         smali_files = _scan_files(smali_dir, ".smali")
-        logger.info("Scanning %d Smali files", len(smali_files))
-        for path, content in smali_files:
+        total = len(smali_files)
+        logger.info("Scanning %d Smali files …", total)
+        for idx, (path, content) in enumerate(smali_files, 1):
             _analyze_smali_file(path, content, smali_dir, result)
+            if total >= 500 and idx % 500 == 0:
+                logger.info("  Smali progress: %d / %d (%.0f%%)", idx, total, idx / total * 100)
 
     # Scan Java files (supplementary)
     if jadx_dir and jadx_dir.exists():
         sources_dir = jadx_dir / "sources"
         if sources_dir.exists():
+            logger.info("  Loading Java files from disk …")
             java_files = _scan_files(sources_dir, ".java")
-            logger.info("Scanning %d Java files", len(java_files))
-            for path, content in java_files:
+            total = len(java_files)
+            logger.info("Scanning %d Java files …", total)
+            for idx, (path, content) in enumerate(java_files, 1):
                 _analyze_java_file(path, content, jadx_dir, result)
+                if total >= 500 and idx % 500 == 0:
+                    logger.info("  Java progress: %d / %d (%.0f%%)", idx, total, idx / total * 100)
 
     logger.info(
         "Code analysis complete: %d findings, %d implementations, %d hook targets",
